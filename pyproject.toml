@@ -23,9 +23,6 @@ packages = ["src/raphael_core"]
 [tool.uv.sources]
 raphael-contracts = { path = "../raphael-contracts", editable = true }
 
-[tool.uv.sources]
-raphael-contracts = { path = "../raphael-contracts", editable = true }
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
