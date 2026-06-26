@@ -21,6 +21,12 @@ SERVICE_ROUTES: list[tuple[str, str]] = [
     ("/v1/orgs", "RAPHAEL_ORGS_URL"),
     ("/v1/workspaces", "RAPHAEL_WORKSPACES_URL"),
     ("/v1/artifacts", "RAPHAEL_ARTIFACTS_URL"),
+    ("/v1/ingest", "RAPHAEL_ARTIFACTS_URL"),
+    ("/v1/objects", "RAPHAEL_ARTIFACTS_URL"),
+    ("/v1/events", "RAPHAEL_AUDIT_URL"),
+    ("/v1/iam", "RAPHAEL_ADMIN_URL"),
+    ("/v1/sessions", "RAPHAEL_SYNC_URL"),
+    ("/v1/projects", "RAPHAEL_WORKSPACES_URL"),
     ("/v1/reviews", "RAPHAEL_REVIEWS_URL"),
     ("/v1/automations", "RAPHAEL_AUTOMATION_URL"),
     ("/v1/connectors", "RAPHAEL_CONNECTORS_URL"),
@@ -67,6 +73,14 @@ def _rewrite_compat_path(path: str) -> str:
         return f"/v1/workspaces/{DEFAULT_WORKSPACE}/modules/{module_id}{rest}"
     if path == "/v1/timeline":
         return "/v1/audit/timeline"
+    if path.startswith("/v1/events/"):
+        return path.replace("/v1/events/", "/v1/audit/events/", 1)
+    if path.startswith("/v1/iam/"):
+        return path.replace("/v1/iam/", "/v1/admin/iam/", 1)
+    if path.startswith("/v1/ingest/"):
+        return path.replace("/v1/ingest/", "/v1/artifacts/ingest/", 1)
+    if path.startswith("/v1/objects/"):
+        return path.replace("/v1/objects/", "/v1/artifacts/objects/", 1)
     if path.startswith("/v1/adapters"):
         return path.replace("/v1/adapters", "/v1/connectors", 1)
     if path.startswith("/v1/webhooks"):
