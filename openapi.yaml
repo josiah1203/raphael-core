@@ -1,0 +1,12 @@
+openapi: 3.1.0
+info:
+  title: raphael-core
+  version: 0.1.0
+  description: API gateway — routing, auth middleware, rate limiting, compat shims
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
