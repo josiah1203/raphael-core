@@ -24,6 +24,7 @@ SERVICE_ROUTES: list[tuple[str, str]] = [
     ("/v1/reviews", "RAPHAEL_REVIEWS_URL"),
     ("/v1/automations", "RAPHAEL_AUTOMATION_URL"),
     ("/v1/connectors", "RAPHAEL_CONNECTORS_URL"),
+    ("/v1/webhooks", "RAPHAEL_CONNECTORS_URL"),
     ("/v1/adapters", "RAPHAEL_CONNECTORS_URL"),  # compat alias
     ("/v1/notifications", "RAPHAEL_NOTIFICATIONS_URL"),
     ("/v1/audit", "RAPHAEL_AUDIT_URL"),
@@ -38,6 +39,16 @@ SERVICE_ROUTES: list[tuple[str, str]] = [
 ]
 
 LEGACY_AUTH_PREFIX = "/api/v1/auth"
+PAUSED_TIER2_PREFIXES = (
+    "/v1/comments",
+    "/v1/messaging",
+    "/v1/links",
+    "/v1/workflows",
+    "/v1/registry",
+    "/v1/environments",
+    "/v1/analytics",
+    "/v1/search",
+)
 
 app = FastAPI(title="raphael-core", version="0.1.0")
 
@@ -58,6 +69,8 @@ def _rewrite_compat_path(path: str) -> str:
         return "/v1/audit/timeline"
     if path.startswith("/v1/adapters"):
         return path.replace("/v1/adapters", "/v1/connectors", 1)
+    if path.startswith("/v1/webhooks"):
+        return path.replace("/v1/webhooks", "/v1/connectors/webhooks", 1)
     if path.startswith(LEGACY_AUTH_PREFIX):
         return path.replace(LEGACY_AUTH_PREFIX, "/v1/identity", 1)
     return path
@@ -68,9 +81,6 @@ def _resolve_upstream(path: str) -> tuple[str, str] | None:
     for prefix, env_key in SERVICE_ROUTES:
         if rewritten.startswith(prefix) or path.startswith(prefix):
             return _service_url(env_key), rewritten
-    legacy = os.environ.get("RAPHAEL_LEGACY_CALLIOPE_URL", "").rstrip("/")
-    if legacy and path.startswith("/v1/"):
-        return legacy, path
     return None
 
 
@@ -121,6 +131,12 @@ async def proxy(full_path: str, request: Request) -> Response:
     path = f"/{full_path}"
     if path in ("/health", "/v1/health"):
         return JSONResponse(health())
+    if any(path.startswith(prefix) for prefix in PAUSED_TIER2_PREFIXES):
+        err = ErrorResponse(
+            code="not_implemented",
+            message=f"{path} is paused pending Calliope source parity",
+        )
+        return JSONResponse(status_code=501, content=err.model_dump())
 
     upstream = _resolve_upstream(path)
     if not upstream:
@@ -154,6 +170,7 @@ async def proxy(full_path: str, request: Request) -> Response:
         out_headers["Link"] = f'<{target_path}>; rel="successor-version"'
     if upstream_res.headers.get("content-type"):
         out_headers["content-type"] = upstream_res.headers["content-type"]
+    out_headers["X-Raphael-Upstream"] = base_url
 
     return Response(
         content=upstream_res.content,
