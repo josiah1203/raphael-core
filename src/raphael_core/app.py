@@ -11,7 +11,7 @@ import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from raphael_contracts.auth import AuthContext
+from raphael_core.auth import validate_jwt
 from raphael_contracts.errors import ErrorResponse
 
 DEFAULT_WORKSPACE = os.environ.get("RAPHAEL_DEFAULT_WORKSPACE", "default")
@@ -31,6 +31,9 @@ SERVICE_ROUTES: list[tuple[str, str]] = [
     ("/v1/graph", "RAPHAEL_GRAPH_URL"),
     ("/v1/ai", "RAPHAEL_AI_URL"),
     ("/v1/admin", "RAPHAEL_ADMIN_URL"),
+    ("/v1/sync", "RAPHAEL_SYNC_URL"),
+    ("/v1/ops", "RAPHAEL_OPS_URL"),
+    ("/v1/rwu", "RAPHAEL_RWU_URL"),
     ("/v1/repos", "RAPHAEL_WORKSPACES_URL"),  # compat prefix
 ]
 
@@ -80,7 +83,12 @@ def _inject_auth_headers(request: Request, headers: dict[str, str]) -> dict[str,
         headers["Authorization"] = auth
     if api_key:
         headers["X-API-Key"] = api_key
-    # ponytail: JWT validation delegated to identity on protected routes; gateway forwards as-is
+    public_paths = ("/health", "/v1/health", "/v1/config", "/v1/identity/register", "/v1/identity/login")
+    path = request.url.path
+    if not any(path.startswith(p) for p in public_paths):
+        ctx = validate_jwt(auth or None, api_key or None)
+        if ctx:
+            headers.update(ctx)
     return headers
 
 
@@ -98,6 +106,7 @@ def platform_config() -> dict[str, Any]:
         "platform_name": "Raphael",
         "version": "0.1.0",
         "features": {"reviews": True, "automations": True, "connectors": True},
+        "deprecation": {"repos_api": "Use /v1/workspaces/{id}/modules instead of /v1/repos"},
     }
 
 
