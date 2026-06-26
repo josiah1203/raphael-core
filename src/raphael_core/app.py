@@ -83,6 +83,12 @@ def _inject_auth_headers(request: Request, headers: dict[str, str]) -> dict[str,
         headers["Authorization"] = auth
     if api_key:
         headers["X-API-Key"] = api_key
+    content_type = request.headers.get("content-type")
+    if content_type:
+        headers["Content-Type"] = content_type
+    accept = request.headers.get("accept")
+    if accept:
+        headers["Accept"] = accept
     public_paths = ("/health", "/v1/health", "/v1/config", "/v1/identity/register", "/v1/identity/login")
     path = request.url.path
     if not any(path.startswith(p) for p in public_paths):
