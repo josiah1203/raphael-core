@@ -12,6 +12,50 @@ def test_health() -> None:
     assert res.json()["service"] == "raphael-core"
 
 
+def test_v1_health_default() -> None:
+    client = TestClient(app)
+    res = client.get("/v1/health")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["service"] == "raphael-core"
+    assert body["status"] == "ok"
+    assert "services" not in body
+
+
+def test_v1_health_aggregate(monkeypatch) -> None:
+    import httpx
+    from raphael_core import health as health_mod
+
+    monkeypatch.setenv("RAPHAEL_HEALTH_AGGREGATE", "1")
+    monkeypatch.setenv("RAPHAEL_ARTIFACTS_URL", "http://artifacts-upstream:8091")
+    monkeypatch.setenv("RAPHAEL_WORKSPACES_URL", "http://workspaces-upstream:8083")
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def get(self, url: str):
+            class Res:
+                status_code = 200
+
+            if "artifacts" in url:
+                return Res()
+            raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(health_mod.httpx, "Client", FakeClient)
+
+    body = health_mod.aggregate_health()
+    assert body["status"] == "degraded"
+    assert body["services"]["artifacts"] == "ok"
+    assert body["services"]["workspaces"] == "unreachable"
+
+
 def test_config() -> None:
     client = TestClient(app)
     res = client.get("/v1/config")

@@ -10,11 +10,11 @@ import uuid
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 
 from raphael_core.auth import validate_jwt
-from raphael_core.health import platform_health
+from raphael_core.health import gateway_health, platform_health
 from raphael_core.logging_config import configure_logging
 from raphael_core.metrics import REQUEST_LATENCY, REQUESTS_TOTAL, UPSTREAM_ERRORS, metrics_body, path_prefix
 from raphael_core.services import SERVICE_ROUTES, service_label, service_url
@@ -127,6 +127,11 @@ def _inject_auth_headers(request: Request, headers: dict[str, str]) -> tuple[dic
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    return gateway_health()
+
+
+@app.get("/v1/health")
+def v1_health() -> dict[str, Any]:
     return platform_health()
 
 
@@ -138,12 +143,15 @@ def prometheus_metrics() -> PlainTextResponse:
 
 @app.get("/v1/config")
 def platform_config() -> dict[str, Any]:
+    cloud_key = os.environ.get("RAPHAEL_CLOUD_API_KEY", "")
     return {
         "api_base": os.environ.get("RAPHAEL_PUBLIC_API_BASE", "http://127.0.0.1:8080"),
         "ui_port": int(os.environ.get("RAPHAEL_UI_PORT", "5173")),
         "mode": "raphael",
         "platform_name": "Raphael",
         "version": "0.1.0",
+        "deployment_mode": os.environ.get("RAPHAEL_DEPLOYMENT_MODE", "self_hosted"),
+        "cloud_connected": bool(cloud_key),
         "features": {
             "reviews": True,
             "automations": True,
@@ -160,13 +168,50 @@ def platform_config() -> dict[str, Any]:
     }
 
 
+@app.post("/v1/cloud/connect")
+def cloud_connect(body: dict[str, Any]) -> dict[str, Any]:
+    api_key = (body.get("api_key") or "").strip()
+    expected = os.environ.get("RAPHAEL_CLOUD_API_KEY", "")
+    if not api_key:
+        return {"connected": False, "message": "api_key_required"}
+    if expected and api_key != expected:
+        return {"connected": False, "message": "Invalid API key"}
+    return {
+        "connected": True,
+        "plan": os.environ.get("RAPHAEL_CLOUD_PLAN", "team"),
+        "org_name": os.environ.get("RAPHAEL_CLOUD_ORG_NAME", "Raphael Cloud"),
+        "message": "Connected to Raphael Cloud",
+    }
+
+
+@app.get("/v1/cloud/status")
+def cloud_status(
+    authorization: str | None = Header(default=None),
+    x_raphael_cloud_key: str | None = Header(default=None, alias="X-Raphael-Cloud-Key"),
+) -> dict[str, Any]:
+    token = (x_raphael_cloud_key or authorization or "").replace("Bearer ", "").strip()
+    expected = os.environ.get("RAPHAEL_CLOUD_API_KEY", "")
+    if not token:
+        return {"connected": False, "message": "No API key"}
+    if expected and token != expected:
+        return {"connected": False, "message": "Invalid or expired API key"}
+    return {
+        "connected": True,
+        "plan": os.environ.get("RAPHAEL_CLOUD_PLAN", "team"),
+        "org_name": os.environ.get("RAPHAEL_CLOUD_ORG_NAME", "Raphael Cloud"),
+        "message": "Connected to Raphael Cloud",
+    }
+
+
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 async def proxy(full_path: str, request: Request) -> Response:
     path = f"/{full_path}"
     prefix = path_prefix(path)
     started = time.perf_counter()
 
-    if path in ("/health", "/v1/health"):
+    if path == "/health":
+        return JSONResponse(gateway_health())
+    if path == "/v1/health":
         return JSONResponse(platform_health())
     upstream = _resolve_upstream(path)
     if not upstream:
